@@ -1,0 +1,6 @@
+Host truenas
+    HostName your-truenas-ip
+    User your-username
+    IdentityFile ~/.ssh/id_ed25519
+    ForwardAgent yes
+    RemoteForward /var/run/docker.sock /var/run/docker.sock

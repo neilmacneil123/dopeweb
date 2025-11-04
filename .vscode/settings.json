@@ -1,0 +1,22 @@
+{
+    "docker.host": "ssh://truenas",
+    "terminal.integrated.profiles.windows": {
+        "PowerShell": {
+            "source": "PowerShell",
+            "args": [
+                "-ExecutionPolicy",
+                "RemoteSigned"
+            ]
+        }
+    },
+    "docker.environment": {
+        "SSH_AUTH_SOCK": null,
+        "SSH_PRIVATE_KEY": "${env:USERPROFILE}\\.ssh\\id_ed25519"
+    },
+    "docker.containers.sortBy": "Name",
+    "docker.containers.groupBy": "State",
+    "docker.images.sortBy": "Label",
+    "remote.extensionKind": {
+        "ms-azuretools.vscode-docker": ["workspace"]
+    }
+}

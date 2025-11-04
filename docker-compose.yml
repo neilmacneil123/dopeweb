@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  mongodb:
+    image: mongo:latest
+    container_name: dopeweb-mongodb
+    restart: unless-stopped
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=${MONGO_ROOT_USER:-admin}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_ROOT_PASSWORD:-password}
+      - MONGO_INITDB_DATABASE=dopewars
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      - dopeweb-network
+    ports:
+      - "27017:27017"
+
+  dopeweb:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: dopeweb-app
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - MONGODB_URI=mongodb://${MONGO_ROOT_USER:-admin}:${MONGO_ROOT_PASSWORD:-password}@mongodb:27017/dopewars?authSource=admin
+      - JWT_SECRET=${JWT_SECRET:-your-secret-key}
+      - NEXT_PUBLIC_SOCKET_URL=${NEXT_PUBLIC_SOCKET_URL:-http://localhost:3000}
+    ports:
+      - "3000:3000"
+    depends_on:
+      - mongodb
+    networks:
+      - dopeweb-network
+
+networks:
+  dopeweb-network:
+    driver: bridge
+
+volumes:
+  mongodb_data:
+    driver: local
