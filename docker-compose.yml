@@ -15,6 +15,11 @@ services:
       - dopeweb-network
     ports:
       - "27017:27017"
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.runCommand({ ping: 1 })"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   dopeweb:
     build:
@@ -30,7 +35,8 @@ services:
     ports:
       - "3000:3000"
     depends_on:
-      - mongodb
+      mongodb:
+        condition: service_healthy
     networks:
       - dopeweb-network
 
