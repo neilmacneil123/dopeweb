@@ -1,36 +1,49 @@
 import { create } from 'zustand';
+import { CITIES, DRUGS, generateMarketPrices, generateRandomEvent, type DrugName, type MarketPrices } from '@/lib/gameUtils';
 
-export interface Drug {
-  name: string;
-  price: number;
+export type InventoryItem = {
+  name: DrugName;
   quantity: number;
-}
+  avgCost: number;
+};
+
+export type EventLog = {
+  id: string;
+  day: number;
+  message: string;
+  tone: 'info' | 'danger' | 'success';
+};
 
 export interface GameState {
   cash: number;
   debt: number;
   bankAccount: number;
-  inventory: Drug[];
-  currentCity: string;
+  inventory: InventoryItem[];
+  currentCity: (typeof CITIES)[number];
   day: number;
-  prices: Record<string, number>;
+  prices: MarketPrices;
   health: number;
   maxInventory: number;
+  playersInCity: number;
+  events: EventLog[];
 }
 
 interface GameActions {
-  setCash: (cash: number) => void;
-  setDebt: (debt: number) => void;
-  setBankAccount: (amount: number) => void;
-  updateInventory: (drugs: Drug[]) => void;
-  setCurrentCity: (city: string) => void;
-  setPrices: (prices: Record<string, number>) => void;
-  incrementDay: () => void;
-  setHealth: (health: number) => void;
-  buyDrug: (drug: string, quantity: number, price: number) => void;
-  sellDrug: (drug: string, quantity: number, price: number) => void;
+  initialize: () => void;
+  travel: (city: GameState['currentCity']) => void;
+  nextDay: () => void;
+  buyDrug: (drug: DrugName, quantity: number) => void;
+  sellDrug: (drug: DrugName, quantity: number) => void;
+  deposit: (amount: number) => void;
+  withdraw: (amount: number) => void;
+  payDebt: (amount: number) => void;
   reset: () => void;
+  setPlayersInCity: (count: number) => void;
+  setPricesFromServer: (prices: MarketPrices) => void;
+  addEvent: (message: string, tone?: EventLog['tone']) => void;
 }
+
+const MAX_EVENTS = 40;
 
 const initialState: GameState = {
   cash: 2000,
@@ -39,51 +52,152 @@ const initialState: GameState = {
   inventory: [],
   currentCity: 'Brooklyn',
   day: 1,
-  prices: {},
+  prices: generateMarketPrices(),
   health: 100,
   maxInventory: 100,
+  playersInCity: 1,
+  events: [],
 };
+
+function addEventLog(state: GameState, message: string, tone: EventLog['tone'] = 'info', dayOverride?: number) {
+  const entry: EventLog = {
+    id: `${Date.now()}-${Math.random()}`,
+    day: dayOverride ?? state.day,
+    message,
+    tone,
+  };
+  const nextEvents = [entry, ...state.events];
+  if (nextEvents.length > MAX_EVENTS) {
+    nextEvents.pop();
+  }
+  return nextEvents;
+}
+
+function applyRandomEvent(state: GameState): GameState {
+  const event = generateRandomEvent();
+  if (!event) return state;
+
+  let cash = state.cash;
+  let debt = state.debt;
+  let health = Math.max(0, Math.min(100, state.health + (event.healthDelta || 0)));
+  let inventory = state.inventory;
+
+  if (typeof event.cashDelta === 'number') {
+    if (event.cashDelta < 0 && Math.abs(event.cashDelta) < 1) {
+      // Treat negative sub-1 values as percentage loss of current cash
+      cash = Math.max(0, Math.floor(cash + cash * event.cashDelta));
+    } else {
+      cash = Math.max(0, cash + event.cashDelta);
+    }
+  }
+
+  if (typeof event.debtDelta === 'number') {
+    if (event.debtDelta > 0 && event.debtDelta < 1) {
+      debt = Math.floor(debt + debt * event.debtDelta);
+    } else {
+      debt = Math.max(0, debt + event.debtDelta);
+    }
+  }
+
+  if (event.inventoryLossRatio && event.inventoryLossRatio > 0) {
+    inventory = state.inventory.map((item) => ({
+      ...item,
+      quantity: Math.max(0, Math.floor(item.quantity * (1 - event.inventoryLossRatio!))),
+    })).filter((item) => item.quantity > 0);
+  }
+
+  return {
+    ...state,
+    cash,
+    debt,
+    health,
+    inventory,
+    events: addEventLog(state, event.message, event.tone),
+  };
+}
+
+function advanceDay(state: GameState): GameState {
+  const dailyInterest = 0.06;
+  const newDebt = Math.floor(state.debt * (1 + dailyInterest));
+  const prices = generateMarketPrices();
+  const health = Math.max(0, state.health - 1); // slow decay to encourage movement
+
+  const updatedState: GameState = {
+    ...state,
+    day: state.day + 1,
+    debt: newDebt,
+    prices,
+    health,
+    events: addEventLog(state, `Day ${state.day + 1}: Markets refreshed in ${state.currentCity}.`, 'info', state.day + 1),
+  };
+
+  return applyRandomEvent(updatedState);
+}
 
 export const useGameStore = create<GameState & GameActions>((set) => ({
   ...initialState,
 
-  setCash: (cash) => set({ cash }),
-  setDebt: (debt) => set({ debt }),
-  setBankAccount: (amount) => set({ bankAccount: amount }),
-  updateInventory: (drugs) => set({ inventory: drugs }),
-  setCurrentCity: (city) => set({ currentCity: city }),
-  setPrices: (prices) => set({ prices }),
-  incrementDay: () => set((state) => ({ day: state.day + 1 })),
-  setHealth: (health) => set({ health }),
+  initialize: () => set(() => ({ ...initialState, prices: generateMarketPrices() })),
 
-  buyDrug: (drug, quantity, price) =>
+  travel: (city) =>
     set((state) => {
-      const totalCost = quantity * price;
-      if (totalCost > state.cash) return state;
-      if (state.inventory.reduce((acc, d) => acc + d.quantity, 0) + quantity > state.maxInventory) return state;
+      if (state.currentCity === city) return state;
+      const traveledState: GameState = {
+        ...state,
+        currentCity: city,
+        events: addEventLog(state, `Traveled to ${city}.`, 'info', state.day + 1),
+      };
+      return advanceDay(traveledState);
+    }),
 
-      const existingDrug = state.inventory.find((d) => d.name === drug);
-      const newInventory = existingDrug
+  nextDay: () => set((state) => advanceDay(state)),
+
+  buyDrug: (drug, quantity) =>
+    set((state) => {
+      const price = state.prices[drug];
+      const totalCost = price * quantity;
+      const totalInventory = state.inventory.reduce((acc, d) => acc + d.quantity, 0);
+
+      if (totalCost > state.cash || totalInventory + quantity > state.maxInventory) {
+        return {
+          ...state,
+          events: addEventLog(state, 'Cannot buy: insufficient cash or inventory space.', 'danger'),
+        };
+      }
+
+      const existing = state.inventory.find((d) => d.name === drug);
+      const inventory = existing
         ? state.inventory.map((d) =>
             d.name === drug
-              ? { ...d, quantity: d.quantity + quantity, price: (d.price * d.quantity + price * quantity) / (d.quantity + quantity) }
+              ? {
+                  ...d,
+                  quantity: d.quantity + quantity,
+                  avgCost: (d.avgCost * d.quantity + price * quantity) / (d.quantity + quantity),
+                }
               : d
           )
-        : [...state.inventory, { name: drug, quantity, price }];
+        : [...state.inventory, { name: drug, quantity, avgCost: price }];
 
       return {
         ...state,
         cash: state.cash - totalCost,
-        inventory: newInventory,
+        inventory,
+        events: addEventLog(state, `Bought ${quantity} ${drug}.`, 'success'),
       };
     }),
 
-  sellDrug: (drug, quantity, price) =>
+  sellDrug: (drug, quantity) =>
     set((state) => {
-      const existingDrug = state.inventory.find((d) => d.name === drug);
-      if (!existingDrug || existingDrug.quantity < quantity) return state;
+      const price = state.prices[drug];
+      const existing = state.inventory.find((d) => d.name === drug);
+      if (!existing || existing.quantity < quantity) {
+        return {
+          ...state,
+          events: addEventLog(state, 'Cannot sell: not enough inventory.', 'danger'),
+        };
+      }
 
-      const newInventory = state.inventory
+      const inventory = state.inventory
         .map((d) =>
           d.name === drug ? { ...d, quantity: d.quantity - quantity } : d
         )
@@ -91,10 +205,59 @@ export const useGameStore = create<GameState & GameActions>((set) => ({
 
       return {
         ...state,
-        cash: state.cash + quantity * price,
-        inventory: newInventory,
+        cash: state.cash + price * quantity,
+        inventory,
+        events: addEventLog(state, `Sold ${quantity} ${drug}.`, 'success'),
       };
     }),
 
-  reset: () => set(initialState),
+  deposit: (amount) =>
+    set((state) => {
+      const safeAmount = Math.min(amount, state.cash);
+      if (safeAmount <= 0) return state;
+      return {
+        ...state,
+        cash: state.cash - safeAmount,
+        bankAccount: state.bankAccount + safeAmount,
+        events: addEventLog(state, `Deposited $${safeAmount.toLocaleString()}.`, 'info'),
+      };
+    }),
+
+  withdraw: (amount) =>
+    set((state) => {
+      const safeAmount = Math.min(amount, state.bankAccount);
+      if (safeAmount <= 0) return state;
+      return {
+        ...state,
+        cash: state.cash + safeAmount,
+        bankAccount: state.bankAccount - safeAmount,
+        events: addEventLog(state, `Withdrew $${safeAmount.toLocaleString()}.`, 'info'),
+      };
+    }),
+
+  payDebt: (amount) =>
+    set((state) => {
+      const safeAmount = Math.min(amount, state.cash, state.debt);
+      if (safeAmount <= 0) return state;
+      return {
+        ...state,
+        cash: state.cash - safeAmount,
+        debt: state.debt - safeAmount,
+        events: addEventLog(state, `Paid back $${safeAmount.toLocaleString()} of debt.`, 'success'),
+      };
+    }),
+
+  reset: () => set(() => ({ ...initialState, prices: generateMarketPrices() })),
+
+  setPlayersInCity: (count) => set((state) => ({ ...state, playersInCity: count })),
+
+  setPricesFromServer: (prices) =>
+    set((state) => ({
+      ...state,
+      prices,
+      events: addEventLog(state, 'Market updated by another player.', 'info'),
+    })),
+
+  addEvent: (message, tone = 'info') =>
+    set((state) => ({ ...state, events: addEventLog(state, message, tone) })),
 }));

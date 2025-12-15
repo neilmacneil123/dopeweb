@@ -16,46 +16,67 @@ export const DRUGS = {
   Ludes: { minPrice: 10, maxPrice: 60 },
 } as const;
 
-export const EVENTS = [
-  {
-    name: 'Police Bust',
-    probability: 0.1,
-    effect: (state: any) => {
-      // Chance to lose inventory or cash
-      return { ...state, cash: state.cash * 0.5 };
-    },
-  },
-  {
-    name: 'Found Stash',
-    probability: 0.05,
-    effect: (state: any) => {
-      // Find some free drugs
-      return { ...state, cash: state.cash * 1.2 };
-    },
-  },
-] as const;
+export type DrugName = keyof typeof DRUGS;
+export type MarketPrices = Record<DrugName, number>;
 
-export function generateMarketPrices() {
-  const prices: Record<string, number> = {};
-  
+type EventTone = 'info' | 'danger' | 'success';
+
+export type RandomEventResult = {
+  message: string;
+  tone: EventTone;
+  cashDelta?: number;
+  debtDelta?: number;
+  healthDelta?: number;
+  inventoryLossRatio?: number;
+};
+
+export function generateMarketPrices(): MarketPrices {
+  const prices = {} as MarketPrices;
+
   Object.entries(DRUGS).forEach(([drug, { minPrice, maxPrice }]) => {
-    prices[drug] = Math.floor(
-      minPrice + Math.random() * (maxPrice - minPrice)
-    );
+    const spread = maxPrice - minPrice;
+    const volatility = 0.25 + Math.random() * 0.5; // 25-75% of the spread to make markets feel swingy
+    const direction = Math.random() > 0.5 ? 1 : -1;
+    const movement = spread * volatility * direction;
+    const candidate = (minPrice + maxPrice) / 2 + movement;
+    prices[drug as DrugName] = Math.max(minPrice, Math.min(maxPrice, Math.floor(candidate)));
   });
 
   return prices;
 }
 
-export function generateRandomEvent() {
-  const random = Math.random();
-  let probabilitySum = 0;
+export function generateRandomEvent(): RandomEventResult | null {
+  const roll = Math.random();
 
-  for (const event of EVENTS) {
-    probabilitySum += event.probability;
-    if (random <= probabilitySum) {
-      return event;
-    }
+  // Police bust
+  if (roll < 0.1) {
+    const inventoryLossRatio = 0.35;
+    return {
+      message: 'Police bust! You lost some stash and cash running from the cops.',
+      tone: 'danger',
+      cashDelta: -0.35, // apply as percentage of current cash
+      inventoryLossRatio,
+      healthDelta: -10,
+    };
+  }
+
+  // Found stash
+  if (roll < 0.18) {
+    const stash = 500 + Math.floor(Math.random() * 2500);
+    return {
+      message: `Found a hidden stash worth $${stash.toLocaleString()}.`,
+      tone: 'success',
+      cashDelta: stash,
+    };
+  }
+
+  // Lone shark interest spike
+  if (roll < 0.23) {
+    return {
+      message: 'Loan shark tacks on extra interest.',
+      tone: 'danger',
+      debtDelta: Math.random() * 0.15, // 0-15% increase
+    };
   }
 
   return null;
