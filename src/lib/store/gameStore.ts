@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { CITIES, DRUGS, generateMarketPrices, generateRandomEvent, type DrugName, type MarketPrices } from '@/lib/gameUtils';
+import { CITIES, generateMarketPrices, generateRandomEvent, type DrugName, type MarketPrices } from '@/lib/gameUtils';
 
 export type InventoryItem = {
   name: DrugName;
