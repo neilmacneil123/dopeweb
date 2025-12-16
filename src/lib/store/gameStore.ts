@@ -7,6 +7,7 @@ import {
   type DrugName,
   type MarketPrices,
   type TerritoryMap,
+  type TerritoryStatus,
 } from '@/lib/gameUtils';
 
 export type InventoryItem = {
@@ -61,6 +62,7 @@ interface GameActions {
   addEvent: (message: string, tone?: EventLog['tone']) => void;
   claimTerritory: (city: GameState['currentCity'], owner: string) => void;
   defendTerritory: (city: GameState['currentCity'], owner: string) => void;
+  setTerritoryStatus: (city: GameState['currentCity'], status: TerritoryStatus) => void;
 }
 
 const MAX_EVENTS = 40;
@@ -313,6 +315,16 @@ export const useGameStore = create<GameState & GameActions>((set) => ({
 
   addEvent: (message, tone = 'info') =>
     set((state) => ({ ...state, events: addEventLog(state, message, tone) })),
+
+  setTerritoryStatus: (city, status) =>
+    set((state) => ({
+      ...state,
+      territories: {
+        ...state.territories,
+        [city]: status,
+      },
+      events: addEventLog(state, `${status.owner} updated control of ${city}.`, 'info'),
+    })),
 
   claimTerritory: (city, owner) =>
     set((state) => {
