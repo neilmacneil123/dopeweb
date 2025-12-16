@@ -6,7 +6,7 @@ import { Market } from "@/components/Market";
 import { Inventory } from "@/components/Inventory";
 import { PlayerStatus } from "@/components/PlayerStatus";
 import { CITIES, type DrugName } from "@/lib/gameUtils";
-import { useGameStore } from "@/lib/store/gameStore";
+import { useGameStore, type TerritoryState } from "@/lib/store/gameStore";
 import { getSocket } from "@/lib/socketClient";
 
 export default function Home() {
@@ -22,11 +22,7 @@ export default function Home() {
     events,
     setPlayersInCity,
     setPricesFromServer,
-    captureTerritory,
-    defendTerritory,
-    markTerritoryContested,
-    setTerritoryFromBroadcast,
-    territories,
+    setTerritoryStatus,
   } = useGameStore();
 
   const [depositValue, setDepositValue] = useState("500");
@@ -52,56 +48,26 @@ export default function Home() {
       }
     };
 
+    const handleTerritoryUpdate = (payload: TerritoryState) => {
+      if (payload.city === currentCity) {
+        setTerritoryStatus(payload);
+      }
+    };
+
     socket.on("connect", () => {
       socket.emit("join-city", currentCity);
     });
 
     socket.on("presence", handlePresence);
     socket.on("market:broadcast", handleMarketBroadcast);
-    socket.on(
-      "territory:capture",
-      (payload: { city: string; owner?: "You" | "Rival" | "Neutral" }) => {
-        const owner = payload.owner || "Rival";
-        const message =
-          owner === "You"
-            ? `${payload.city} secured for your crew.`
-            : `Another crew captured ${payload.city}.`;
-        setTerritoryFromBroadcast(
-          payload.city as (typeof CITIES)[number],
-          owner,
-          false,
-          message,
-        );
-      },
-    );
-    socket.on(
-      "territory:defend",
-      (payload: { city: string; owner?: "You" | "Rival" | "Neutral" }) => {
-        const owner = payload.owner || "Rival";
-        const message =
-          owner === "You"
-            ? `${payload.city} defenses reinforced.`
-            : `${payload.city} defenses were reinforced by another crew.`;
-        setTerritoryFromBroadcast(
-          payload.city as (typeof CITIES)[number],
-          owner,
-          false,
-          message,
-        );
-      },
-    );
-    socket.on("territory:contested", (payload: { city: string; reason?: string }) => {
-      markTerritoryContested(payload.city as (typeof CITIES)[number], payload.reason);
-    });
+    socket.on("territory:state", handleTerritoryUpdate);
 
     return () => {
       socket.off("presence", handlePresence);
       socket.off("market:broadcast", handleMarketBroadcast);
-      socket.off("territory:capture");
-      socket.off("territory:defend");
-      socket.off("territory:contested");
+      socket.off("territory:state", handleTerritoryUpdate);
     };
-  }, [currentCity, markTerritoryContested, setPlayersInCity, setPricesFromServer, setTerritoryFromBroadcast]);
+  }, [currentCity, setPlayersInCity, setPricesFromServer, setTerritoryStatus]);
 
   const handleTravel = (city: (typeof CITIES)[number]) => {
     if (city === currentCity) return;

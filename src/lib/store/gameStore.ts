@@ -14,6 +14,15 @@ export type EventLog = {
   tone: 'info' | 'danger' | 'success';
 };
 
+export type TerritoryState = {
+  city: (typeof CITIES)[number];
+  region: string;
+  status: 'claimed' | 'defending' | 'contested' | 'neutral';
+  controller?: string;
+  note?: string;
+  updatedAt: number;
+};
+
 export interface GameState {
   cash: number;
   debt: number;
@@ -26,7 +35,7 @@ export interface GameState {
   maxInventory: number;
   playersInCity: number;
   events: EventLog[];
-  territories: Record<(typeof CITIES)[number], TerritoryStatus>;
+  territories: Record<string, TerritoryState>;
 }
 
 interface GameActions {
@@ -42,15 +51,7 @@ interface GameActions {
   setPlayersInCity: (count: number) => void;
   setPricesFromServer: (prices: MarketPrices) => void;
   addEvent: (message: string, tone?: EventLog['tone']) => void;
-  captureTerritory: (city: GameState['currentCity']) => void;
-  defendTerritory: (city: GameState['currentCity']) => void;
-  markTerritoryContested: (city: GameState['currentCity'], reason?: string) => void;
-  setTerritoryFromBroadcast: (
-    city: GameState['currentCity'],
-    owner: TerritoryOwner,
-    contested?: boolean,
-    sourceMessage?: string,
-  ) => void;
+  setTerritoryStatus: (territory: TerritoryState) => void;
 }
 
 const MAX_EVENTS = 40;
@@ -84,7 +85,7 @@ const initialState: GameState = {
   maxInventory: 100,
   playersInCity: 1,
   events: [],
-  territories: getDefaultTerritories(),
+  territories: {},
 };
 
 function addEventLog(state: GameState, message: string, tone: EventLog['tone'] = 'info', dayOverride?: number) {
@@ -289,69 +290,17 @@ export const useGameStore = create<GameState & GameActions>((set) => ({
   addEvent: (message, tone = 'info') =>
     set((state) => ({ ...state, events: addEventLog(state, message, tone) })),
 
-  captureTerritory: (city) =>
+  setTerritoryStatus: (territory) =>
     set((state) => {
-      const territories = {
-        ...state.territories,
-        [city]: { owner: 'You', contested: false },
-      };
-      return {
-        ...state,
-        territories,
-        events: addEventLog(state, `You captured ${city}. Holding it nets respect.`, 'success'),
-      };
-    }),
-
-  defendTerritory: (city) =>
-    set((state) => {
-      const existing = state.territories[city];
-      const territories = {
-        ...state.territories,
-        [city]: { owner: existing?.owner === 'You' ? 'You' : 'Neutral', contested: false },
-      };
+      const key = `${territory.city}:${territory.region}`;
+      const tone: EventLog['tone'] = territory.status === 'contested' ? 'danger' : territory.status === 'claimed' ? 'success' : 'info';
+      const controllerText = territory.controller ? ` by ${territory.controller}` : '';
+      const message = `${territory.region} in ${territory.city} is now ${territory.status}${controllerText}.`;
 
       return {
         ...state,
-        territories,
-        events: addEventLog(state, `You shored up defenses in ${city}.`, 'info'),
-      };
-    }),
-
-  markTerritoryContested: (city, reason) =>
-    set((state) => {
-      const current = state.territories[city];
-      const territories = {
-        ...state.territories,
-        [city]: { ...(current || { owner: 'Neutral', contested: false }), contested: true },
-      };
-      return {
-        ...state,
-        territories,
-        events: addEventLog(
-          state,
-          reason || `${city} is now contested by another crew.`,
-          'danger',
-        ),
-      };
-    }),
-
-  setTerritoryFromBroadcast: (city, owner, contested = false, sourceMessage) =>
-    set((state) => {
-      const territories = {
-        ...state.territories,
-        [city]: { owner, contested },
-      };
-
-      const ownershipTone: EventLog['tone'] = owner === 'You' ? 'success' : owner === 'Rival' ? 'danger' : 'info';
-
-      return {
-        ...state,
-        territories,
-        events: addEventLog(
-          state,
-          sourceMessage || `${city} territory shifted to ${owner.toLowerCase()}.`,
-          ownershipTone,
-        ),
+        territories: { ...state.territories, [key]: territory },
+        events: addEventLog(state, message, tone),
       };
     }),
 }));
