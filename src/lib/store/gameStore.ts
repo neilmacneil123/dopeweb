@@ -26,6 +26,7 @@ export interface GameState {
   maxInventory: number;
   playersInCity: number;
   events: EventLog[];
+  territories: Record<(typeof CITIES)[number], TerritoryStatus>;
 }
 
 interface GameActions {
@@ -41,9 +42,35 @@ interface GameActions {
   setPlayersInCity: (count: number) => void;
   setPricesFromServer: (prices: MarketPrices) => void;
   addEvent: (message: string, tone?: EventLog['tone']) => void;
+  captureTerritory: (city: GameState['currentCity']) => void;
+  defendTerritory: (city: GameState['currentCity']) => void;
+  markTerritoryContested: (city: GameState['currentCity'], reason?: string) => void;
+  setTerritoryFromBroadcast: (
+    city: GameState['currentCity'],
+    owner: TerritoryOwner,
+    contested?: boolean,
+    sourceMessage?: string,
+  ) => void;
 }
 
 const MAX_EVENTS = 40;
+
+type TerritoryOwner = 'You' | 'Rival' | 'Neutral';
+
+type TerritoryStatus = {
+  owner: TerritoryOwner;
+  contested: boolean;
+};
+
+function getDefaultTerritories(): Record<(typeof CITIES)[number], TerritoryStatus> {
+  return CITIES.reduce(
+    (acc, city) => {
+      acc[city] = { owner: 'Neutral', contested: false };
+      return acc;
+    },
+    {} as Record<(typeof CITIES)[number], TerritoryStatus>,
+  );
+}
 
 const initialState: GameState = {
   cash: 2000,
@@ -57,6 +84,7 @@ const initialState: GameState = {
   maxInventory: 100,
   playersInCity: 1,
   events: [],
+  territories: getDefaultTerritories(),
 };
 
 function addEventLog(state: GameState, message: string, tone: EventLog['tone'] = 'info', dayOverride?: number) {
@@ -137,7 +165,7 @@ function advanceDay(state: GameState): GameState {
 export const useGameStore = create<GameState & GameActions>((set) => ({
   ...initialState,
 
-  initialize: () => set(() => ({ ...initialState, prices: generateMarketPrices() })),
+  initialize: () => set(() => ({ ...initialState, prices: generateMarketPrices(), territories: getDefaultTerritories() })),
 
   travel: (city) =>
     set((state) => {
@@ -247,7 +275,7 @@ export const useGameStore = create<GameState & GameActions>((set) => ({
       };
     }),
 
-  reset: () => set(() => ({ ...initialState, prices: generateMarketPrices() })),
+  reset: () => set(() => ({ ...initialState, prices: generateMarketPrices(), territories: getDefaultTerritories() })),
 
   setPlayersInCity: (count) => set((state) => ({ ...state, playersInCity: count })),
 
@@ -260,4 +288,70 @@ export const useGameStore = create<GameState & GameActions>((set) => ({
 
   addEvent: (message, tone = 'info') =>
     set((state) => ({ ...state, events: addEventLog(state, message, tone) })),
+
+  captureTerritory: (city) =>
+    set((state) => {
+      const territories = {
+        ...state.territories,
+        [city]: { owner: 'You', contested: false },
+      };
+      return {
+        ...state,
+        territories,
+        events: addEventLog(state, `You captured ${city}. Holding it nets respect.`, 'success'),
+      };
+    }),
+
+  defendTerritory: (city) =>
+    set((state) => {
+      const existing = state.territories[city];
+      const territories = {
+        ...state.territories,
+        [city]: { owner: existing?.owner === 'You' ? 'You' : 'Neutral', contested: false },
+      };
+
+      return {
+        ...state,
+        territories,
+        events: addEventLog(state, `You shored up defenses in ${city}.`, 'info'),
+      };
+    }),
+
+  markTerritoryContested: (city, reason) =>
+    set((state) => {
+      const current = state.territories[city];
+      const territories = {
+        ...state.territories,
+        [city]: { ...(current || { owner: 'Neutral', contested: false }), contested: true },
+      };
+      return {
+        ...state,
+        territories,
+        events: addEventLog(
+          state,
+          reason || `${city} is now contested by another crew.`,
+          'danger',
+        ),
+      };
+    }),
+
+  setTerritoryFromBroadcast: (city, owner, contested = false, sourceMessage) =>
+    set((state) => {
+      const territories = {
+        ...state.territories,
+        [city]: { owner, contested },
+      };
+
+      const ownershipTone: EventLog['tone'] = owner === 'You' ? 'success' : owner === 'Rival' ? 'danger' : 'info';
+
+      return {
+        ...state,
+        territories,
+        events: addEventLog(
+          state,
+          sourceMessage || `${city} territory shifted to ${owner.toLowerCase()}.`,
+          ownershipTone,
+        ),
+      };
+    }),
 }));
