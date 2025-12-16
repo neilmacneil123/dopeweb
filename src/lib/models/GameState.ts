@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { createDefaultTerritories, type TerritoryMap } from '@/lib/gameUtils';
 
 const gameStateSchema = new mongoose.Schema({
   city: {
@@ -17,6 +18,15 @@ const gameStateSchema = new mongoose.Schema({
     type: Date,
     default: Date.now,
   },
+  territories: {
+    type: Map,
+    of: {
+      owner: String,
+      contested: Boolean,
+      claimEndsAt: Number,
+    },
+    default: createDefaultTerritories,
+  },
 });
 
 export type GameStateDocument = mongoose.Document & {
@@ -30,6 +40,7 @@ export type GameStateDocument = mongoose.Document & {
     ludes: number;
   };
   timestamp: Date;
+  territories: TerritoryMap;
 };
 
 export default mongoose.models.GameState || mongoose.model<GameStateDocument>('GameState', gameStateSchema);
