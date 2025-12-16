@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/db';
 import GameState from '@/lib/models/GameState';
-import { generateMarketPrices } from '@/lib/gameUtils';
+import { createDefaultTerritories, generateMarketPrices } from '@/lib/gameUtils';
 
 export async function GET(req: NextRequest) {
   try {
@@ -11,6 +11,7 @@ export async function GET(req: NextRequest) {
     const gameState = new GameState({
       city: 'Brooklyn',
       prices,
+      territories: createDefaultTerritories(),
     });
 
     await gameState.save();

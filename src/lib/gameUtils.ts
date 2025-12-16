@@ -81,3 +81,22 @@ export function generateRandomEvent(): RandomEventResult | null {
 
   return null;
 }
+
+export type TerritoryStatus = {
+  owner: string | null;
+  contested: boolean;
+  claimEndsAt: number | null;
+};
+
+export type TerritoryMap = Record<(typeof CITIES)[number], TerritoryStatus>;
+
+export function createDefaultTerritories(): TerritoryMap {
+  return CITIES.reduce<TerritoryMap>((acc, city) => {
+    acc[city] = {
+      owner: null,
+      contested: false,
+      claimEndsAt: null,
+    };
+    return acc;
+  }, {} as TerritoryMap);
+}

@@ -1,5 +1,13 @@
 import { create } from 'zustand';
-import { CITIES, generateMarketPrices, generateRandomEvent, type DrugName, type MarketPrices } from '@/lib/gameUtils';
+import {
+  CITIES,
+  createDefaultTerritories,
+  generateMarketPrices,
+  generateRandomEvent,
+  type DrugName,
+  type MarketPrices,
+  type TerritoryMap,
+} from '@/lib/gameUtils';
 
 export type InventoryItem = {
   name: DrugName;
@@ -35,7 +43,7 @@ export interface GameState {
   maxInventory: number;
   playersInCity: number;
   events: EventLog[];
-  territories: Record<string, TerritoryState>;
+  territories: TerritoryMap;
 }
 
 interface GameActions {
@@ -51,10 +59,16 @@ interface GameActions {
   setPlayersInCity: (count: number) => void;
   setPricesFromServer: (prices: MarketPrices) => void;
   addEvent: (message: string, tone?: EventLog['tone']) => void;
-  setTerritoryStatus: (territory: TerritoryState) => void;
+  claimTerritory: (city: GameState['currentCity'], owner: string) => void;
+  defendTerritory: (city: GameState['currentCity'], owner: string) => void;
 }
 
 const MAX_EVENTS = 40;
+const CLAIM_COST = 500;
+const DEFEND_COST = 250;
+const CLAIM_HEALTH_COST = 10;
+const DEFEND_HEALTH_COST = 5;
+const CLAIM_DURATION_MS = 5 * 60 * 1000;
 
 type TerritoryOwner = 'You' | 'Rival' | 'Neutral';
 
@@ -85,7 +99,7 @@ const initialState: GameState = {
   maxInventory: 100,
   playersInCity: 1,
   events: [],
-  territories: {},
+  territories: createDefaultTerritories(),
 };
 
 function addEventLog(state: GameState, message: string, tone: EventLog['tone'] = 'info', dayOverride?: number) {
@@ -166,7 +180,12 @@ function advanceDay(state: GameState): GameState {
 export const useGameStore = create<GameState & GameActions>((set) => ({
   ...initialState,
 
-  initialize: () => set(() => ({ ...initialState, prices: generateMarketPrices(), territories: getDefaultTerritories() })),
+  initialize: () =>
+    set(() => ({
+      ...initialState,
+      prices: generateMarketPrices(),
+      territories: createDefaultTerritories(),
+    })),
 
   travel: (city) =>
     set((state) => {
@@ -276,7 +295,12 @@ export const useGameStore = create<GameState & GameActions>((set) => ({
       };
     }),
 
-  reset: () => set(() => ({ ...initialState, prices: generateMarketPrices(), territories: getDefaultTerritories() })),
+  reset: () =>
+    set(() => ({
+      ...initialState,
+      prices: generateMarketPrices(),
+      territories: createDefaultTerritories(),
+    })),
 
   setPlayersInCity: (count) => set((state) => ({ ...state, playersInCity: count })),
 
@@ -290,17 +314,78 @@ export const useGameStore = create<GameState & GameActions>((set) => ({
   addEvent: (message, tone = 'info') =>
     set((state) => ({ ...state, events: addEventLog(state, message, tone) })),
 
-  setTerritoryStatus: (territory) =>
+  claimTerritory: (city, owner) =>
     set((state) => {
-      const key = `${territory.city}:${territory.region}`;
-      const tone: EventLog['tone'] = territory.status === 'contested' ? 'danger' : territory.status === 'claimed' ? 'success' : 'info';
-      const controllerText = territory.controller ? ` by ${territory.controller}` : '';
-      const message = `${territory.region} in ${territory.city} is now ${territory.status}${controllerText}.`;
+      const territory = state.territories[city];
+      if (!territory) return state;
+
+      if (state.cash < CLAIM_COST) {
+        return {
+          ...state,
+          events: addEventLog(state, 'Not enough cash to claim territory.', 'danger'),
+        };
+      }
+
+      const updatedHealth = Math.max(0, state.health - CLAIM_HEALTH_COST);
+      const updatedTerritories: TerritoryMap = {
+        ...state.territories,
+        [city]: {
+          owner,
+          contested: true,
+          claimEndsAt: Date.now() + CLAIM_DURATION_MS,
+        },
+      };
 
       return {
         ...state,
-        territories: { ...state.territories, [key]: territory },
-        events: addEventLog(state, message, tone),
+        cash: state.cash - CLAIM_COST,
+        health: updatedHealth,
+        territories: updatedTerritories,
+        events: addEventLog(
+          state,
+          `${owner} started claiming ${city}. Health -${CLAIM_HEALTH_COST}, Cash -$${CLAIM_COST.toLocaleString()}.`,
+          'info'
+        ),
+      };
+    }),
+
+  defendTerritory: (city, owner) =>
+    set((state) => {
+      const territory = state.territories[city];
+      if (!territory || territory.owner !== owner) {
+        return {
+          ...state,
+          events: addEventLog(state, 'Cannot defend a territory you do not control.', 'danger'),
+        };
+      }
+
+      if (state.cash < DEFEND_COST) {
+        return {
+          ...state,
+          events: addEventLog(state, 'Not enough cash to defend territory.', 'danger'),
+        };
+      }
+
+      const updatedHealth = Math.max(0, state.health - DEFEND_HEALTH_COST);
+      const updatedTerritories: TerritoryMap = {
+        ...state.territories,
+        [city]: {
+          ...territory,
+          contested: false,
+          claimEndsAt: null,
+        },
+      };
+
+      return {
+        ...state,
+        cash: state.cash - DEFEND_COST,
+        health: updatedHealth,
+        territories: updatedTerritories,
+        events: addEventLog(
+          state,
+          `${owner} defended ${city}. Health -${DEFEND_HEALTH_COST}, Cash -$${DEFEND_COST.toLocaleString()}.`,
+          'success'
+        ),
       };
     }),
 }));
