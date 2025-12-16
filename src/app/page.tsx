@@ -5,8 +5,8 @@ import { Map } from "@/components/Map";
 import { Market } from "@/components/Market";
 import { Inventory } from "@/components/Inventory";
 import { PlayerStatus } from "@/components/PlayerStatus";
-import { CITIES, type DrugName } from "@/lib/gameUtils";
-import { useGameStore, type TerritoryState } from "@/lib/store/gameStore";
+import { CITIES, type DrugName, type TerritoryStatus } from "@/lib/gameUtils";
+import { useGameStore } from "@/lib/store/gameStore";
 import { getSocket } from "@/lib/socketClient";
 
 export default function Home() {
@@ -15,7 +15,6 @@ export default function Home() {
     currentCity,
     travel,
     nextDay,
-    prices,
     deposit,
     withdraw,
     payDebt,
@@ -23,6 +22,9 @@ export default function Home() {
     setPlayersInCity,
     setPricesFromServer,
     setTerritoryStatus,
+    territories,
+    claimTerritory,
+    defendTerritory,
   } = useGameStore();
 
   const [depositValue, setDepositValue] = useState("500");
@@ -48,9 +50,9 @@ export default function Home() {
       }
     };
 
-    const handleTerritoryUpdate = (payload: TerritoryState) => {
+    const handleTerritoryUpdate = (payload: { city: (typeof CITIES)[number]; status: TerritoryStatus }) => {
       if (payload.city === currentCity) {
-        setTerritoryStatus(payload);
+        setTerritoryStatus(payload.city, payload.status);
       }
     };
 
@@ -84,13 +86,13 @@ export default function Home() {
   };
 
   const handleCapture = (city: (typeof CITIES)[number]) => {
-    captureTerritory(city);
+    claimTerritory(city, "You");
     const socket = getSocket();
     socket.emit("territory:capture", { city, owner: "You" });
   };
 
   const handleDefend = (city: (typeof CITIES)[number]) => {
-    defendTerritory(city);
+    defendTerritory(city, "You");
     const socket = getSocket();
     socket.emit("territory:defend", { city, owner: "You" });
   };

@@ -1,12 +1,8 @@
 "use client";
 
-import { CITIES } from "@/lib/gameUtils";
+import { CITIES, type TerritoryStatus } from "@/lib/gameUtils";
 
-export type TerritoryOwner = "You" | "Rival" | "Neutral";
-export type TerritoryStatus = {
-  owner: TerritoryOwner;
-  contested: boolean;
-};
+type TerritoryOwner = TerritoryStatus["owner"];
 
 interface MapProps {
   currentCity: (typeof CITIES)[number];
@@ -46,17 +42,18 @@ export function Map({ currentCity, territories, onTravel, onCapture, onDefend }:
 
       <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
         {CITIES.map((city) => {
-          const territory = territories[city] || { owner: "Neutral" as TerritoryOwner, contested: false };
+          const territory = territories[city] || { owner: "Neutral" as TerritoryOwner, contested: false, claimEndsAt: null };
           const isHere = city === currentCity;
+          const owner = territory.owner ?? "Neutral";
           return (
             <div
               key={city}
-              className={`relative overflow-hidden rounded-xl border border-slate-800 bg-gradient-to-br ${ownerGradients[territory.owner]} p-4 shadow-lg shadow-black/30`}
+              className={`relative overflow-hidden rounded-xl border border-slate-800 bg-gradient-to-br ${ownerGradients[owner]} p-4 shadow-lg shadow-black/30`}
             >
               <div className="flex items-start justify-between gap-2">
                 <div>
                   <p className="text-xs uppercase tracking-wide text-slate-200/90">{city}</p>
-                  <p className="text-sm text-slate-100/90">{ownerCopy[territory.owner]}</p>
+                  <p className="text-sm text-slate-100/90">{ownerCopy[owner]}</p>
                 </div>
                 {territory.contested && (
                   <span className="rounded-full bg-amber-500/20 px-3 py-1 text-[11px] font-semibold uppercase text-amber-100 ring-1 ring-amber-300/50">
