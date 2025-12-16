@@ -56,6 +56,23 @@ interface GameActions {
 
 const MAX_EVENTS = 40;
 
+type TerritoryOwner = 'You' | 'Rival' | 'Neutral';
+
+type TerritoryStatus = {
+  owner: TerritoryOwner;
+  contested: boolean;
+};
+
+function getDefaultTerritories(): Record<(typeof CITIES)[number], TerritoryStatus> {
+  return CITIES.reduce(
+    (acc, city) => {
+      acc[city] = { owner: 'Neutral', contested: false };
+      return acc;
+    },
+    {} as Record<(typeof CITIES)[number], TerritoryStatus>,
+  );
+}
+
 const initialState: GameState = {
   cash: 2000,
   debt: 5500,
@@ -149,7 +166,7 @@ function advanceDay(state: GameState): GameState {
 export const useGameStore = create<GameState & GameActions>((set) => ({
   ...initialState,
 
-  initialize: () => set(() => ({ ...initialState, prices: generateMarketPrices() })),
+  initialize: () => set(() => ({ ...initialState, prices: generateMarketPrices(), territories: getDefaultTerritories() })),
 
   travel: (city) =>
     set((state) => {
@@ -259,7 +276,7 @@ export const useGameStore = create<GameState & GameActions>((set) => ({
       };
     }),
 
-  reset: () => set(() => ({ ...initialState, prices: generateMarketPrices() })),
+  reset: () => set(() => ({ ...initialState, prices: generateMarketPrices(), territories: getDefaultTerritories() })),
 
   setPlayersInCity: (count) => set((state) => ({ ...state, playersInCity: count })),
 
