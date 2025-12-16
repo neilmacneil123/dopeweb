@@ -5,7 +5,7 @@ import { Market } from "@/components/Market";
 import { Inventory } from "@/components/Inventory";
 import { PlayerStatus } from "@/components/PlayerStatus";
 import { CITIES, type DrugName } from "@/lib/gameUtils";
-import { useGameStore } from "@/lib/store/gameStore";
+import { useGameStore, type TerritoryState } from "@/lib/store/gameStore";
 import { getSocket } from "@/lib/socketClient";
 
 export default function Home() {
@@ -21,6 +21,7 @@ export default function Home() {
     events,
     setPlayersInCity,
     setPricesFromServer,
+    setTerritoryStatus,
   } = useGameStore();
 
   const [depositValue, setDepositValue] = useState("500");
@@ -46,18 +47,26 @@ export default function Home() {
       }
     };
 
+    const handleTerritoryUpdate = (payload: TerritoryState) => {
+      if (payload.city === currentCity) {
+        setTerritoryStatus(payload);
+      }
+    };
+
     socket.on("connect", () => {
       socket.emit("join-city", currentCity);
     });
 
     socket.on("presence", handlePresence);
     socket.on("market:broadcast", handleMarketBroadcast);
+    socket.on("territory:state", handleTerritoryUpdate);
 
     return () => {
       socket.off("presence", handlePresence);
       socket.off("market:broadcast", handleMarketBroadcast);
+      socket.off("territory:state", handleTerritoryUpdate);
     };
-  }, [currentCity, setPlayersInCity, setPricesFromServer]);
+  }, [currentCity, setPlayersInCity, setPricesFromServer, setTerritoryStatus]);
 
   const handleTravel = (city: (typeof CITIES)[number]) => {
     if (city === currentCity) return;

@@ -14,6 +14,15 @@ export type EventLog = {
   tone: 'info' | 'danger' | 'success';
 };
 
+export type TerritoryState = {
+  city: (typeof CITIES)[number];
+  region: string;
+  status: 'claimed' | 'defending' | 'contested' | 'neutral';
+  controller?: string;
+  note?: string;
+  updatedAt: number;
+};
+
 export interface GameState {
   cash: number;
   debt: number;
@@ -26,6 +35,7 @@ export interface GameState {
   maxInventory: number;
   playersInCity: number;
   events: EventLog[];
+  territories: Record<string, TerritoryState>;
 }
 
 interface GameActions {
@@ -41,6 +51,7 @@ interface GameActions {
   setPlayersInCity: (count: number) => void;
   setPricesFromServer: (prices: MarketPrices) => void;
   addEvent: (message: string, tone?: EventLog['tone']) => void;
+  setTerritoryStatus: (territory: TerritoryState) => void;
 }
 
 const MAX_EVENTS = 40;
@@ -57,6 +68,7 @@ const initialState: GameState = {
   maxInventory: 100,
   playersInCity: 1,
   events: [],
+  territories: {},
 };
 
 function addEventLog(state: GameState, message: string, tone: EventLog['tone'] = 'info', dayOverride?: number) {
@@ -260,4 +272,18 @@ export const useGameStore = create<GameState & GameActions>((set) => ({
 
   addEvent: (message, tone = 'info') =>
     set((state) => ({ ...state, events: addEventLog(state, message, tone) })),
+
+  setTerritoryStatus: (territory) =>
+    set((state) => {
+      const key = `${territory.city}:${territory.region}`;
+      const tone: EventLog['tone'] = territory.status === 'contested' ? 'danger' : territory.status === 'claimed' ? 'success' : 'info';
+      const controllerText = territory.controller ? ` by ${territory.controller}` : '';
+      const message = `${territory.region} in ${territory.city} is now ${territory.status}${controllerText}.`;
+
+      return {
+        ...state,
+        territories: { ...state.territories, [key]: territory },
+        events: addEventLog(state, message, tone),
+      };
+    }),
 }));
