@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Map } from "@/components/Map";
 import { Market } from "@/components/Market";
 import { Inventory } from "@/components/Inventory";
 import { PlayerStatus } from "@/components/PlayerStatus";
@@ -21,6 +22,11 @@ export default function Home() {
     events,
     setPlayersInCity,
     setPricesFromServer,
+    captureTerritory,
+    defendTerritory,
+    markTerritoryContested,
+    setTerritoryFromBroadcast,
+    territories,
   } = useGameStore();
 
   const [depositValue, setDepositValue] = useState("500");
@@ -52,12 +58,50 @@ export default function Home() {
 
     socket.on("presence", handlePresence);
     socket.on("market:broadcast", handleMarketBroadcast);
+    socket.on(
+      "territory:capture",
+      (payload: { city: string; owner?: "You" | "Rival" | "Neutral" }) => {
+        const owner = payload.owner || "Rival";
+        const message =
+          owner === "You"
+            ? `${payload.city} secured for your crew.`
+            : `Another crew captured ${payload.city}.`;
+        setTerritoryFromBroadcast(
+          payload.city as (typeof CITIES)[number],
+          owner,
+          false,
+          message,
+        );
+      },
+    );
+    socket.on(
+      "territory:defend",
+      (payload: { city: string; owner?: "You" | "Rival" | "Neutral" }) => {
+        const owner = payload.owner || "Rival";
+        const message =
+          owner === "You"
+            ? `${payload.city} defenses reinforced.`
+            : `${payload.city} defenses were reinforced by another crew.`;
+        setTerritoryFromBroadcast(
+          payload.city as (typeof CITIES)[number],
+          owner,
+          false,
+          message,
+        );
+      },
+    );
+    socket.on("territory:contested", (payload: { city: string; reason?: string }) => {
+      markTerritoryContested(payload.city as (typeof CITIES)[number], payload.reason);
+    });
 
     return () => {
       socket.off("presence", handlePresence);
       socket.off("market:broadcast", handleMarketBroadcast);
+      socket.off("territory:capture");
+      socket.off("territory:defend");
+      socket.off("territory:contested");
     };
-  }, [currentCity, setPlayersInCity, setPricesFromServer]);
+  }, [currentCity, markTerritoryContested, setPlayersInCity, setPricesFromServer, setTerritoryFromBroadcast]);
 
   const handleTravel = (city: (typeof CITIES)[number]) => {
     if (city === currentCity) return;
@@ -71,6 +115,18 @@ export default function Home() {
     const socket = getSocket();
     const latestPrices = useGameStore.getState().prices;
     socket.emit("market:update", { city: currentCity, prices: latestPrices });
+  };
+
+  const handleCapture = (city: (typeof CITIES)[number]) => {
+    captureTerritory(city);
+    const socket = getSocket();
+    socket.emit("territory:capture", { city, owner: "You" });
+  };
+
+  const handleDefend = (city: (typeof CITIES)[number]) => {
+    defendTerritory(city);
+    const socket = getSocket();
+    socket.emit("territory:defend", { city, owner: "You" });
   };
 
   const depositNum = Number(depositValue) || 0;
@@ -103,23 +159,14 @@ export default function Home() {
         <section className="grid gap-4 lg:grid-cols-[2fr_1fr]">
           <div className="grid gap-4 md:grid-cols-2">
             <PlayerStatus />
-            <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-4 text-slate-100">
-              <h2 className="text-lg font-semibold mb-3">Travel</h2>
-              <div className="grid grid-cols-2 gap-2">
-                {CITIES.map((city) => (
-                  <button
-                    key={city}
-                    onClick={() => handleTravel(city)}
-                    className={`rounded-lg px-3 py-2 text-sm font-semibold transition ${
-                      city === currentCity
-                        ? "bg-emerald-600 text-white shadow-lg shadow-emerald-900/40"
-                        : "bg-slate-800 text-slate-100 hover:bg-slate-700"
-                    }`}
-                  >
-                    {city}
-                  </button>
-                ))}
-              </div>
+            <div className="md:col-span-2">
+              <Map
+                currentCity={currentCity}
+                territories={territories}
+                onTravel={handleTravel}
+                onCapture={handleCapture}
+                onDefend={handleDefend}
+              />
             </div>
             <Market />
             <Inventory />
