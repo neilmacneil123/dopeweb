@@ -83,7 +83,7 @@ export function generateRandomEvent(): RandomEventResult | null {
 }
 
 export type TerritoryStatus = {
-  owner: 'You' | 'Rival' | 'Neutral';
+  owner: string | null;
   contested: boolean;
   claimEndsAt: number | null;
 };
@@ -93,7 +93,7 @@ export type TerritoryMap = Record<(typeof CITIES)[number], TerritoryStatus>;
 export function createDefaultTerritories(): TerritoryMap {
   return CITIES.reduce<TerritoryMap>((acc, city) => {
     acc[city] = {
-      owner: 'Neutral',
+      owner: null,
       contested: false,
       claimEndsAt: null,
     };

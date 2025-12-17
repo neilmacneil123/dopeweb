@@ -10,7 +10,8 @@ export function middleware(request: NextRequest) {
   // Skip middleware for public routes
   if (
     request.nextUrl.pathname.startsWith('/api/login') ||
-    request.nextUrl.pathname.startsWith('/api/register')
+    request.nextUrl.pathname.startsWith('/api/register') ||
+    request.nextUrl.pathname.startsWith('/api/logout')
   ) {
     return NextResponse.next();
   }

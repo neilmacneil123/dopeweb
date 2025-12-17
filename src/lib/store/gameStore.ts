@@ -23,15 +23,6 @@ export type EventLog = {
   tone: 'info' | 'danger' | 'success';
 };
 
-export type TerritoryState = {
-  city: (typeof CITIES)[number];
-  region: string;
-  status: 'claimed' | 'defending' | 'contested' | 'neutral';
-  controller?: string;
-  note?: string;
-  updatedAt: number;
-};
-
 export interface GameState {
   cash: number;
   debt: number;
@@ -60,8 +51,8 @@ interface GameActions {
   setPlayersInCity: (count: number) => void;
   setPricesFromServer: (prices: MarketPrices) => void;
   addEvent: (message: string, tone?: EventLog['tone']) => void;
-  claimTerritory: (city: GameState['currentCity'], owner: string) => void;
-  defendTerritory: (city: GameState['currentCity'], owner: string) => void;
+  claimTerritory: (city: GameState['currentCity'], owner: string) => TerritoryStatus | null;
+  defendTerritory: (city: GameState['currentCity'], owner: string) => TerritoryStatus | null;
   setTerritoryStatus: (city: GameState['currentCity'], status: TerritoryStatus) => void;
 }
 
@@ -306,10 +297,15 @@ export const useGameStore = create<GameState & GameActions>((set) => ({
         ...state.territories,
         [city]: status,
       },
-      events: addEventLog(state, `${status.owner} updated control of ${city}.`, 'info'),
+      events: addEventLog(
+        state,
+        status.owner ? `${status.owner} updated control of ${city}.` : `${city} is open turf.`,
+        'info'
+      ),
     })),
 
-  claimTerritory: (city, owner) =>
+  claimTerritory: (city, owner) => {
+    let nextStatus: TerritoryStatus | null = null;
     set((state) => {
       const territory = state.territories[city];
       if (!territory) return state;
@@ -322,14 +318,17 @@ export const useGameStore = create<GameState & GameActions>((set) => ({
       }
 
       const updatedHealth = Math.max(0, state.health - CLAIM_HEALTH_COST);
+      const territoryStatus: TerritoryStatus = {
+        owner,
+        contested: true,
+        claimEndsAt: Date.now() + CLAIM_DURATION_MS,
+      };
       const updatedTerritories: TerritoryMap = {
         ...state.territories,
-        [city]: {
-          owner,
-          contested: true,
-          claimEndsAt: Date.now() + CLAIM_DURATION_MS,
-        },
+        [city]: territoryStatus,
       };
+
+      nextStatus = territoryStatus;
 
       return {
         ...state,
@@ -342,9 +341,12 @@ export const useGameStore = create<GameState & GameActions>((set) => ({
           'info'
         ),
       };
-    }),
+    });
+    return nextStatus;
+  },
 
-  defendTerritory: (city, owner) =>
+  defendTerritory: (city, owner) => {
+    let nextStatus: TerritoryStatus | null = null;
     set((state) => {
       const territory = state.territories[city];
       if (!territory || territory.owner !== owner) {
@@ -362,14 +364,17 @@ export const useGameStore = create<GameState & GameActions>((set) => ({
       }
 
       const updatedHealth = Math.max(0, state.health - DEFEND_HEALTH_COST);
+      const territoryStatus: TerritoryStatus = {
+        ...territory,
+        contested: false,
+        claimEndsAt: null,
+      };
       const updatedTerritories: TerritoryMap = {
         ...state.territories,
-        [city]: {
-          ...territory,
-          contested: false,
-          claimEndsAt: null,
-        },
+        [city]: territoryStatus,
       };
+
+      nextStatus = territoryStatus;
 
       return {
         ...state,
@@ -382,5 +387,7 @@ export const useGameStore = create<GameState & GameActions>((set) => ({
           'success'
         ),
       };
-    }),
+    });
+    return nextStatus;
+  },
 }));

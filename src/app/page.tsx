@@ -7,7 +7,9 @@ import { Inventory } from "@/components/Inventory";
 import { PlayerStatus } from "@/components/PlayerStatus";
 import { CITIES, type DrugName, type TerritoryStatus } from "@/lib/gameUtils";
 import { useGameStore } from "@/lib/store/gameStore";
-import { getSocket } from "@/lib/socketClient";
+import { getSocket, disconnectSocket } from "@/lib/socketClient";
+import { AuthPanel } from "@/components/AuthPanel";
+import { useAuthStore } from "@/lib/store/authStore";
 
 export default function Home() {
   const {
@@ -27,15 +29,44 @@ export default function Home() {
     defendTerritory,
   } = useGameStore();
 
+  const { user, hydrate, logout } = useAuthStore((state) => ({
+    user: state.user,
+    hydrate: state.hydrate,
+    logout: state.logout,
+  }));
+
   const [depositValue, setDepositValue] = useState("500");
   const [withdrawValue, setWithdrawValue] = useState("500");
   const [debtValue, setDebtValue] = useState("500");
+  const [authReady, setAuthReady] = useState(false);
 
   useEffect(() => {
-    initialize();
-  }, [initialize]);
+    let active = true;
+    (async () => {
+      await hydrate();
+      if (active) {
+        setAuthReady(true);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [hydrate]);
 
   useEffect(() => {
+    if (user) {
+      initialize();
+    }
+  }, [initialize, user]);
+
+  useEffect(() => {
+    if (!user) {
+      disconnectSocket();
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
     const socket = getSocket();
 
     const handlePresence = (payload: { city: string; count: number }) => {
@@ -51,9 +82,7 @@ export default function Home() {
     };
 
     const handleTerritoryUpdate = (payload: { city: (typeof CITIES)[number]; status: TerritoryStatus }) => {
-      if (payload.city === currentCity) {
-        setTerritoryStatus(payload.city, payload.status);
-      }
+      setTerritoryStatus(payload.city, payload.status);
     };
 
     socket.on("connect", () => {
@@ -69,7 +98,7 @@ export default function Home() {
       socket.off("market:broadcast", handleMarketBroadcast);
       socket.off("territory:state", handleTerritoryUpdate);
     };
-  }, [currentCity, setPlayersInCity, setPricesFromServer, setTerritoryStatus]);
+  }, [currentCity, setPlayersInCity, setPricesFromServer, setTerritoryStatus, user]);
 
   const handleTravel = (city: (typeof CITIES)[number]) => {
     if (city === currentCity) return;
@@ -86,20 +115,36 @@ export default function Home() {
   };
 
   const handleCapture = (city: (typeof CITIES)[number]) => {
-    claimTerritory(city, "You");
+    if (!user) return;
+    const status = claimTerritory(city, user.username);
+    if (!status) return;
     const socket = getSocket();
-    socket.emit("territory:capture", { city, owner: "You" });
+    socket.emit("territory:claim", { city, status });
   };
 
   const handleDefend = (city: (typeof CITIES)[number]) => {
-    defendTerritory(city, "You");
+    if (!user) return;
+    const status = defendTerritory(city, user.username);
+    if (!status) return;
     const socket = getSocket();
-    socket.emit("territory:defend", { city, owner: "You" });
+    socket.emit("territory:defend", { city, status });
   };
 
   const depositNum = Number(depositValue) || 0;
   const withdrawNum = Number(withdrawValue) || 0;
   const debtNum = Number(debtValue) || 0;
+
+  if (!authReady) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-950 text-slate-200">
+        <p className="text-sm uppercase tracking-[0.3em] text-slate-400">Checking session...</p>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <AuthPanel />;
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-black text-slate-100">
@@ -110,16 +155,29 @@ export default function Home() {
             <h1 className="text-3xl font-bold">The Street Is Calling</h1>
             <p className="text-sm text-slate-400">Buy low, sell high. Watch the heat.</p>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              onClick={handleNextDay}
-              className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold hover:bg-blue-700 transition"
-            >
-              Advance Day / Refresh Market
-            </button>
-            <div className="flex items-center gap-2 rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-xs text-slate-300">
-              <span className="inline-block h-2 w-2 rounded-full bg-green-400" />
-              Multiplayer ready
+          <div className="flex flex-col items-end gap-3 text-right">
+            <div className="flex flex-wrap items-center gap-3 text-xs text-slate-400">
+              <span>
+                Signed in as <span className="font-semibold text-slate-100">{user.username}</span>
+              </span>
+              <button
+                onClick={logout}
+                className="rounded-full border border-slate-800 px-3 py-1 text-[11px] font-semibold text-slate-200 transition hover:bg-slate-800"
+              >
+                Log out
+              </button>
+            </div>
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <button
+                onClick={handleNextDay}
+                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold hover:bg-blue-700 transition"
+              >
+                Advance Day / Refresh Market
+              </button>
+              <div className="flex items-center gap-2 rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-xs text-slate-300">
+                <span className="inline-block h-2 w-2 rounded-full bg-green-400" />
+                Multiplayer ready
+              </div>
             </div>
           </div>
         </header>
@@ -131,6 +189,7 @@ export default function Home() {
               <Map
                 currentCity={currentCity}
                 territories={territories}
+                currentPlayer={user.username}
                 onTravel={handleTravel}
                 onCapture={handleCapture}
                 onDefend={handleDefend}

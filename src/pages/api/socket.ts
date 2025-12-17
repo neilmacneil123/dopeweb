@@ -2,26 +2,7 @@ import type { NextApiRequest } from 'next';
 import type { NextApiResponse } from 'next';
 import { Server as NetServer } from 'http';
 import { Server as SocketIOServer, type Socket } from 'socket.io';
-import type { MarketPrices } from '@/lib/gameUtils';
-
-type TerritoryStatus = {
-  city: string;
-  region: string;
-  status: 'claimed' | 'defending' | 'contested' | 'neutral';
-  controller?: string;
-  note?: string;
-  updatedAt: number;
-};
-
-type TerritoryPayload = {
-  city?: string;
-  region?: string;
-  status?: TerritoryStatus['status'];
-  controller?: string;
-  note?: string;
-};
-
-const VALID_TERRITORY_STATUSES: TerritoryStatus['status'][] = ['claimed', 'defending', 'contested', 'neutral'];
+import type { MarketPrices, TerritoryStatus } from '@/lib/gameUtils';
 
 type NextApiResponseWithSocket = NextApiResponse & {
   socket: any & {
@@ -37,33 +18,47 @@ export const config = {
   },
 };
 
-const territoryCache = new Map<string, TerritoryStatus>();
+type TerritorySnapshot = {
+  city: string;
+  status: TerritoryStatus;
+  updatedAt: number;
+};
 
-function isValidTerritoryPayload(payload: TerritoryPayload): payload is Required<Pick<TerritoryPayload, 'city' | 'region'>> & TerritoryPayload {
-  return Boolean(payload && typeof payload.city === 'string' && payload.city.trim() && typeof payload.region === 'string' && payload.region.trim());
+type TerritoryEventPayload = {
+  city?: string;
+  status?: TerritoryStatus;
+};
+
+const territoryCache = new Map<string, TerritorySnapshot>();
+
+function isValidStatus(status: unknown): status is TerritoryStatus {
+  if (!status || typeof status !== 'object') return false;
+  const candidate = status as Record<string, unknown>;
+
+  const ownerValid =
+    candidate.owner === null ||
+    typeof candidate.owner === 'string';
+
+  const contestedValid = typeof candidate.contested === 'boolean';
+  const claimEndsValid =
+    candidate.claimEndsAt === null ||
+    typeof candidate.claimEndsAt === 'number';
+
+  return ownerValid && contestedValid && claimEndsValid;
 }
 
-function normalizeTerritoryPayload(payload: TerritoryPayload, fallbackStatus: TerritoryStatus['status']): TerritoryStatus | null {
-  if (!isValidTerritoryPayload(payload)) return null;
+function isValidPayload(payload: TerritoryEventPayload): payload is Required<TerritoryEventPayload> {
+  return Boolean(payload && typeof payload.city === 'string' && payload.city.trim() && isValidStatus(payload.status));
+}
 
-  return {
+function cacheAndBroadcast(io: SocketIOServer, payload: Required<TerritoryEventPayload>) {
+  const snapshot: TerritorySnapshot = {
     city: payload.city.trim(),
-    region: payload.region.trim(),
-    status: VALID_TERRITORY_STATUSES.includes(payload.status as TerritoryStatus['status'])
-      ? (payload.status as TerritoryStatus['status'])
-      : fallbackStatus,
-    controller: payload.controller?.trim(),
-    note: payload.note,
+    status: payload.status,
     updatedAt: Date.now(),
   };
-}
-
-function cacheAndBroadcast(io: SocketIOServer, territory: TerritoryStatus) {
-  const key = `${territory.city}:${territory.region}`;
-  territoryCache.set(key, territory);
-
-  const regionRoom = `${territory.city}:${territory.region}`;
-  io.to(territory.city).to(regionRoom).emit('territory:state', territory);
+  territoryCache.set(snapshot.city, snapshot);
+  io.emit('territory:state', snapshot);
 }
 
 function emitPresence(socket: Socket, io: SocketIOServer, city: string) {
@@ -72,9 +67,10 @@ function emitPresence(socket: Socket, io: SocketIOServer, city: string) {
   io.to(city).emit('presence', { city, count });
 }
 
-function emitCachedTerritories(socket: Socket, city: string) {
-  const cached = Array.from(territoryCache.values()).filter((territory) => territory.city === city);
-  cached.forEach((territory) => socket.emit('territory:state', territory));
+function emitCachedTerritories(socket: Socket) {
+  territoryCache.forEach((territory) => {
+    socket.emit('territory:state', territory);
+  });
 }
 
 export default function handler(req: NextApiRequest, res: NextApiResponseWithSocket) {
@@ -92,7 +88,7 @@ export default function handler(req: NextApiRequest, res: NextApiResponseWithSoc
         socket.data.city = city;
         socket.join(city);
         emitPresence(socket, io, city);
-        emitCachedTerritories(socket, city);
+        emitCachedTerritories(socket);
       });
 
       socket.on('travel', (city: string) => {
@@ -102,30 +98,21 @@ export default function handler(req: NextApiRequest, res: NextApiResponseWithSoc
         socket.data.city = city;
         socket.join(city);
         emitPresence(socket, io, city);
-        emitCachedTerritories(socket, city);
+        emitCachedTerritories(socket);
       });
 
       socket.on('market:update', (payload: { city: string; prices: MarketPrices }) => {
         io.to(payload.city).emit('market:broadcast', payload);
       });
 
-      socket.on('territory:claim', (payload: TerritoryPayload) => {
-        const territory = normalizeTerritoryPayload(payload, 'claimed');
-        if (!territory) return;
-        cacheAndBroadcast(io, territory);
-      });
+      const handleTerritoryEvent = (payload: TerritoryEventPayload) => {
+        if (!isValidPayload(payload)) return;
+        cacheAndBroadcast(io, payload);
+      };
 
-      socket.on('territory:defend', (payload: TerritoryPayload) => {
-        const territory = normalizeTerritoryPayload(payload, 'defending');
-        if (!territory) return;
-        cacheAndBroadcast(io, territory);
-      });
-
-      socket.on('territory:update', (payload: TerritoryPayload) => {
-        const territory = normalizeTerritoryPayload(payload, 'neutral');
-        if (!territory) return;
-        cacheAndBroadcast(io, territory);
-      });
+      socket.on('territory:claim', handleTerritoryEvent);
+      socket.on('territory:defend', handleTerritoryEvent);
+      socket.on('territory:update', handleTerritoryEvent);
 
       socket.on('disconnect', () => {
         const city = socket.data.city;

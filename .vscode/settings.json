@@ -24,5 +24,12 @@
   "openai.codex.sandbox.enabled": false,
   "openai.codex.sandbox.runtime": "docker",
   "openai.codex.sandbox.allowFileSystem": true,
-  "openai.codex.sandbox.allowNetwork": true
+  "openai.codex.sandbox.allowNetwork": true,
+  "containers.containers.groupBy": "State",
+  "containers.containers.sortBy": "Name",
+  "containers.images.sortBy": "Label",
+  "containers.environment": {
+    "SSH_AUTH_SOCK": null,
+    "SSH_PRIVATE_KEY": "${env:USERPROFILE}\\.ssh\\id_ed25519"
+  }
 }
