@@ -72,23 +72,6 @@ const CLAIM_HEALTH_COST = 10;
 const DEFEND_HEALTH_COST = 5;
 const CLAIM_DURATION_MS = 5 * 60 * 1000;
 
-type TerritoryOwner = 'You' | 'Rival' | 'Neutral';
-
-type TerritoryStatus = {
-  owner: TerritoryOwner;
-  contested: boolean;
-};
-
-function getDefaultTerritories(): Record<(typeof CITIES)[number], TerritoryStatus> {
-  return CITIES.reduce(
-    (acc, city) => {
-      acc[city] = { owner: 'Neutral', contested: false };
-      return acc;
-    },
-    {} as Record<(typeof CITIES)[number], TerritoryStatus>,
-  );
-}
-
 const initialState: GameState = {
   cash: 2000,
   debt: 5500,
